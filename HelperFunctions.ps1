@@ -362,6 +362,22 @@ function Expand-7zipArchive {
     }
 }
 
+function GetSymbolFiles {
+    param (
+        [string] $path,
+        [string] $baseName
+    )
+
+    $filterName = @("$($baseName)_*.*.*.*.app", "$($baseName).app")
+    $appFiles = @(Get-ChildItem -Path $path -Filter $filterName[0])
+
+    if (!$appFiles) {
+        $appFiles = @(Get-ChildItem -Path $path -Filter $filterName[1])
+    }
+
+    return $appFiles
+}
+
 function GetTestToolkitApps {
     Param(
         [string] $containerName,
@@ -376,7 +392,9 @@ function GetTestToolkitApps {
         $symbolsFolder = Join-Path $compilerFolder "symbols"
         # Add Test Framework
         $apps = @()
-        $baseAppInfo = Get-AppJsonFromAppFile -appFile (Get-ChildItem -Path $symbolsFolder -Filter 'Microsoft_Base Application_*.*.*.*.app').FullName
+        $baseAppFile = GetSymbolFiles -path $symbolsFolder -baseName 'Microsoft_Base Application' | Select-Object -First 1
+        $baseAppInfo = Get-AppJsonFromAppFile -appFile $baseAppFile.FullName
+
         $version = [Version]$baseAppInfo.version
         if ($version -ge [Version]"19.0.0.0") {
             $apps += @('Microsoft_Permissions Mock')
@@ -401,10 +419,14 @@ function GetTestToolkitApps {
                 $apps += @('Microsoft_Performance Toolkit *')
             }
         }
+
         $appFiles = @()
+
         $apps | ForEach-Object {
-            $appFiles += @(get-childitem -Path $symbolsFolder -Filter "$($_)_*.*.*.*.app" | Where-Object {($version.Major -ge 17 -or ($_.Name -notlike 'Microsoft_Tests-Marketing_*.*.*.*.app')) -and $_.Name -notlike "Microsoft_Tests-SINGLESERVER_*.*.*.*.app"} | ForEach-Object { $_.FullName })
+            $tempAppFiles = GetSymbolFiles -path $symbolsFolder -baseName $_
+            $appFiles += @($tempAppFiles | Where-Object {($version.Major -ge 17 -or ($_.Name -notlike 'Microsoft_Tests-Marketing*.app')) -and $_.Name -notlike "Microsoft_Tests-SINGLESERVER*.app"} | ForEach-Object { $_.FullName })
         }
+
         $appFiles | Select-Object -Unique
     }
     else {
@@ -1144,7 +1166,7 @@ function GetAppInfo {
                         LoadDLL -Path (Join-Path $alcDllPath Newtonsoft.Json.dll)
                         LoadDLL -Path (Join-Path $alcDllPath System.Collections.Immutable.dll)
                         if (Test-Path (Join-Path $alcDllPath System.IO.Packaging.dll)) {
-        		            LoadDLL -Path (Join-Path $alcDllPath System.IO.Packaging.dll)
+                            LoadDLL -Path (Join-Path $alcDllPath System.IO.Packaging.dll)
                         }
                         LoadDLL -Path (Join-Path $alcDllPath Microsoft.Dynamics.Nav.CodeAnalysis.dll)
                         $assembliesAdded = $true
@@ -1580,6 +1602,9 @@ function GetContainerOs {
     elseif ("$containerOsVersion".StartsWith('10.0.20348.')) {
         $containerOs = "ltsc2022"
     }
+    elseif ("$containerOsVersion".StartsWith('10.0.26100.')) {
+        $containerOs = "ltsc2025"
+    }
     else {
         $containerOs = "unknown"
     }
@@ -1596,7 +1621,12 @@ function GetHostOs {
 
     $hostOs = "Unknown/Insider build"
     if ($os.BuildNumber -eq 26100) {
-        $hostOs = "24H2"
+        if ($isServerHost) {
+            $hostOs = "ltsc2025"
+        }
+        else {
+            $hostOs = "24H2"
+        }
     }
     elseif ($os.BuildNumber -eq 22631) {
         $hostOs = "23H2"
