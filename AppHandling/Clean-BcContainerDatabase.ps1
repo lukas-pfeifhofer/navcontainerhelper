@@ -86,9 +86,14 @@ try {
             $SystemApplicationFile = ""
         }
         else {
-            $SystemSymbolsFile = ":" + (Invoke-ScriptInBCContainer -containerName $containerName -scriptblock {
-                (Get-Item "C:\Program Files\Microsoft Dynamics NAV\*\AL Development Environment\System.app").FullName
-            })
+            if ($platformversion.Major -lt 27) {
+                $SystemSymbolsFile = ":" + (Invoke-ScriptInBCContainer -containerName $containerName -scriptblock {
+                    (Get-Item "C:\Program Files\Microsoft Dynamics NAV\*\AL Development Environment\System.app").FullName
+                })
+            }
+            else {
+                $SystemSymbolsFile = ""
+            }
             $SystemApplicationFile = ":C:\Applications\System Application\Source\Microsoft_System Application.app"
         }
 
@@ -106,8 +111,10 @@ try {
                 $databaseServerInstance += "\$databaseInstance"
             }
 
-            if ($platformVersion.Major -ge 15) {
+            if (($platformVersion.Major -ge 15) -and ($platformVersion.Major -le 26)) {
                 $dbproperties = Invoke-Sqlcmd -ServerInstance $databaseServerInstance -Query "SELECT [applicationversion],[applicationfamily] FROM [$databaseName].[dbo].[`$ndo`$dbproperty]"
+            } elseif( $platformVersion.Major -ge 27) {
+                $dbproperties = Invoke-Sqlcmd -ServerInstance $databaseServerInstance -Query "SELECT [applicationfamily] FROM [$databaseName].[dbo].[`$ndo`$dbproperty]"
             }
 
             if ($copyTables) {
@@ -139,11 +146,14 @@ try {
                 Write-Host "Creating new database $databaseName on $databaseServerInstance with default Collation"
             }
 
-            if ($platformVersion.Major -ge 15) {
+            if (($platformVersion.Major -ge 15) -and ($platformVersion.Major -le 26)) {
                 New-NAVApplicationDatabase -DatabaseServer $databaseServerInstance -DatabaseName $databaseName @CollationParam | Out-Null
                 Invoke-Sqlcmd -ServerInstance $databaseServerInstance -Query "UPDATE [$databaseName].[dbo].[`$ndo`$dbproperty] SET [applicationfamily] = '$($dbproperties.applicationfamily)', [applicationversion] = '$($dbproperties.applicationversion)'"
-            }
-            else {
+            } elseif ($platformVersion.Major -ge 27) {
+                # In 27.x and later applicationversion is removed from the dbproperty table
+                New-NAVApplicationDatabase -DatabaseServer $databaseServerInstance -DatabaseName $databaseName @CollationParam | Out-Null
+                Invoke-Sqlcmd -ServerInstance $databaseServerInstance -Query "UPDATE [$databaseName].[dbo].[`$ndo`$dbproperty] SET [applicationfamily] = '$($dbproperties.applicationfamily)'"
+            } else {
                 Create-NAVDatabase -databasename $databaseName -databaseserver $databaseServerInstance @CollationParam | Out-Null
             }
 
@@ -170,8 +180,10 @@ try {
         Write-Host "Importing license file"
         Import-BcContainerLicense -containerName $containerName -licenseFile $licenseFile[0].FullName
         
-        Write-Host "Publishing System Symbols"
-        Publish-BcContainerApp -containerName $containerName -appFile $SystemSymbolsFile -packageType SymbolsOnly -skipVerification -ignoreIfAppExists
+        if ($SystemSymbolsFile) {
+            Write-Host "Publishing System Symbols"
+            Publish-BcContainerApp -containerName $containerName -appFile $SystemSymbolsFile -packageType SymbolsOnly -skipVerification -ignoreIfAppExists
+        }
 
         Write-Host "Creating Company"
         New-CompanyInBcContainer -containerName $containerName -companyName $companyName -evaluationCompany:$evaluationCompany
@@ -295,3 +307,4 @@ finally {
 }
 }
 Export-ModuleMember -Function Clean-BcContainerDatabase
+

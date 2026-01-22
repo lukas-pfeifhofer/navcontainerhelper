@@ -106,6 +106,51 @@ function Set-ExtensionId
     $ClientContext.SaveValue($extensionIdControl, $ExtensionId)
 }
 
+function Set-RequiredTestIsolation
+(
+    [ValidateSet('None','Disabled','Codeunit','Function')]
+    [string] $RequiredTestIsolation,
+    [ClientContext] $ClientContext,
+    [switch] $debugMode,
+    $Form
+)
+{
+    if ($debugMode) {
+        Write-Host "Setting Required Test Isolation $RequiredTestIsolation"
+    }
+
+    $TestIsolationValues = @{
+        None = 0
+        Disabled = 1
+        Codeunit = 2
+        Function = 3
+    }
+    $requiredTestIsolationControl = $ClientContext.GetControlByName($Form, "RequiredTestIsolation")
+    $ClientContext.SaveValue($requiredTestIsolationControl, $TestIsolationValues[$RequiredTestIsolation])
+}
+
+function Set-TestType
+(
+    [ValidateSet('UnitTest','IntegrationTest','Uncategorized')]
+    [string] $TestType,
+    [ClientContext] $ClientContext,
+    [switch] $debugMode,
+    $Form
+)
+{
+    if ($debugMode) {
+        Write-Host "Setting Test Type $TestType"
+    }
+
+    $TypeValues = @{
+        UnitTest = 1
+        IntegrationTest = 2
+        Uncategorized = 3
+    }
+    $testTypeControl = $ClientContext.GetControlByName($Form, "TestType")
+    $ClientContext.SaveValue($testTypeControl, $TypeValues[$TestType])
+}
+
 function Set-TestCodeunitRange
 (
     [string] $testCodeunitRange,
@@ -333,6 +378,8 @@ function Get-Tests {
         [string] $testCodeunit = "*",
         [string] $testCodeunitRange = "",
         [string] $extensionId = "",
+        [string] $requiredTestIsolation = "",
+        [string] $testType = "",
         [string] $testRunnerCodeunitId = "",
         [array]  $disabledtests = @(),
         [switch] $debugMode,
@@ -373,6 +420,12 @@ function Get-Tests {
 
     if ($testPage -eq 130455) {
         Set-ExtensionId -ExtensionId $extensionId -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        if (![string]::IsNullOrEmpty($requiredTestIsolation)) {
+            Set-RequiredTestIsolation -RequiredTestIsolation $requiredTestIsolation -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        }
+        if (![string]::IsNullOrEmpty($testType)) {
+            Set-TestType -TestType $testType -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        }
         Set-TestCodeunitRange -testCodeunitRange $testCodeunitRange -Form $form -ClientContext $clientContext -debugMode:$debugMode
         Set-TestRunnerCodeunitId -TestRunnerCodeunitId $testRunnerCodeunitId -Form $form -ClientContext $clientContext -debugMode:$debugMode
         Set-RunFalseOnDisabledTests -DisabledTests $DisabledTests -Form $form -ClientContext $clientContext -debugMode:$debugMode
@@ -525,6 +578,8 @@ function Run-Tests {
         [string] $testGroup = "*",
         [string] $testFunction = "*",
         [string] $extensionId = "",
+        [string] $requiredTestIsolation = "",
+        [string] $testType = "",
         [string] $appName = "",
         [string] $testRunnerCodeunitId,
         [array]  $disabledtests = @(),
@@ -589,6 +644,12 @@ function Run-Tests {
 
     if ($testPage -eq 130455) {
         Set-ExtensionId -ExtensionId $extensionId -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        if (![string]::IsNullOrEmpty($requiredTestIsolation)) {
+            Set-RequiredTestIsolation -RequiredTestIsolation $requiredTestIsolation -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        }
+        if (![string]::IsNullOrEmpty($testType)) {
+            Set-TestType -TestType $testType -Form $form -ClientContext $clientContext -debugMode:$debugMode
+        }
         Set-TestCodeunitRange -testCodeunitRange $testCodeunitRange -Form $form -ClientContext $clientContext -debugMode:$debugMode
         Set-TestRunnerCodeunitId -TestRunnerCodeunitId $testRunnerCodeunitId -Form $form -ClientContext $clientContext -debugMode:$debugMode
         Set-RunFalseOnDisabledTests -DisabledTests $DisabledTests -Form $form -ClientContext $clientContext -debugMode:$debugMode
@@ -693,8 +754,14 @@ function Run-Tests {
                 break
             }
             $result = $testResultJson | ConvertFrom-Json
+            $hasTestResults = [bool]($result.PSobject.Properties.name -eq "testResults")
         
             Write-Host -NoNewline "  Codeunit $($result.codeUnit) $($result.name) "
+
+            $totalTests = 0
+            if ($hasTestResults) {
+                $totalTests = $result.testResults.Count
+            }
 
             if ($XUnitResultFileName) {        
                 if ($ReRun) {
@@ -708,11 +775,11 @@ function Run-Tests {
                 $XUnitAssembly.SetAttribute("test-framework", "PS Test Runner")
                 $XUnitAssembly.SetAttribute("run-date", (GetDT -val $result.startTime).ToString("yyyy-MM-dd"))
                 $XUnitAssembly.SetAttribute("run-time", (GetDT -val $result.startTime).ToString("HH':'mm':'ss"))
-                $XUnitAssembly.SetAttribute("total", $result.testResults.Count)
+                $XUnitAssembly.SetAttribute("total", $totalTests)
                 $XUnitCollection = $XUnitDoc.CreateElement("collection")
                 $XUnitAssembly.AppendChild($XUnitCollection) | Out-Null
                 $XUnitCollection.SetAttribute("name", $result.name)
-                $XUnitCollection.SetAttribute("total", $result.testResults.Count)
+                $XUnitCollection.SetAttribute("total", $totalTests)
             }
             if ($JUnitResultFileName) {        
                 if ($ReRun) {
@@ -727,7 +794,7 @@ function Run-Tests {
                 $JUnitTestSuite.SetAttribute("hostname", $hostname)
 
                 $JUnitTestSuite.SetAttribute("time", 0)
-                $JUnitTestSuite.SetAttribute("tests", $result.testResults.Count)
+                $JUnitTestSuite.SetAttribute("tests", $totalTests)
 
                 $JunitTestSuiteProperties = $JUnitDoc.CreateElement("properties")
                 $JUnitTestSuite.AppendChild($JunitTestSuiteProperties) | Out-Null
@@ -774,7 +841,7 @@ function Run-Tests {
             }
         
             $totalduration = [Timespan]::Zero
-            if ($result.PSobject.Properties.name -eq "testResults") {
+            if ($hasTestResults) {
                 $result.testResults | ForEach-Object {
                     $testduration = (GetDT -val $_.finishTime).Subtract((GetDT -val $_.startTime))
                     if ($testduration.TotalSeconds -lt 0) { $testduration = [timespan]::Zero }
@@ -797,7 +864,7 @@ function Run-Tests {
             $failed = 0
             $skipped = 0
         
-            if ($result.PSobject.Properties.name -eq "testResults") {
+            if ($hasTestResults) {
                 $result.testResults | ForEach-Object {
                     $testduration = (GetDT -val $_.finishTime).Subtract((GetDT -val $_.startTime))
                     if ($testduration.TotalSeconds -lt 0) { $testduration = [timespan]::Zero }

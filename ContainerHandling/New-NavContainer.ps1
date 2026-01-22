@@ -2008,7 +2008,7 @@ if (-not `$restartingInstance) {
         if ($version -eq [System.Version]"14.10.40471.0") {
             Write-Host "Patching Microsoft.Dynamics.Nav.Ide.psm1 in container due to issue #859"
             $idepsm = Join-Path $containerFolder "14.10.40471.0-Patch-Microsoft.Dynamics.Nav.Ide.psm1"
-            Download-File -sourceUrl 'https://bcartifacts.blob.core.windows.net/patch/14.10.40471.0/Microsoft.Dynamics.Nav.Ide.psm1' -destinationFile $idepsm
+            Download-File -sourceUrl 'https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/patch/14.10.40471.0/Microsoft.Dynamics.Nav.Ide.psm1' -destinationFile $idepsm
             Invoke-ScriptInBcContainer -containerName $containerName -scriptblock { Param($idepsm)
                 Copy-Item -Path $idepsm -Destination 'C:\Program Files (x86)\Microsoft Dynamics NAV\140\RoleTailored Client\Microsoft.Dynamics.Nav.Ide.psm1' -Force
             } -argumentList (Get-BcContainerPath -containerName $containerName -path $idepsm)
@@ -2016,7 +2016,7 @@ if (-not `$restartingInstance) {
         }
     
         if ((($version -eq [System.Version]"16.0.11240.12076") -or ($version -eq [System.Version]"16.0.11240.12085")) -and $devCountry -ne "W1") {
-            $url = "https://bcartifacts.blob.core.windows.net/patch/16.0.11240.12076/$($devCountry.ToUpper()).zip"
+            $url = "https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net/patch/16.0.11240.12076/$($devCountry.ToUpper()).zip"
             Write-Host "Downloading new test apps for this version from $url"
             $zipName = Join-Path $containerFolder "16.0.11240.12076-$devCountry-Tests-Patch"
             Download-File -sourceUrl $url -destinationFile "$zipName.zip"
@@ -2203,12 +2203,20 @@ if (-not `$restartingInstance) {
     }
     
     if ($Version.Major -ge 22) {
+        Write-Host "Cleanup old dotnet core assemblies"
         Invoke-ScriptInBcContainer -containerName $containerName -scriptblock {
-            Write-Host "Cleanup old dotnet core assemblies"
             Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App\1.0.*' -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App\1.1.*' -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App\5.0.*' -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App\5.0.*' -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($Version.Major -ge 27) {
+        Write-Host "Cleanup old dotnet core assemblies"
+        Invoke-ScriptInBcContainer -containerName $containerName -scriptblock {
+            Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App\6.0.*' -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path 'C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App\6.0.*' -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 

@@ -90,7 +90,7 @@ function Compile-AppWithBcCompilerFolder {
         [switch] $EnableAppSourceCop,
         [switch] $EnablePerTenantExtensionCop,
         [switch] $EnableUICop,
-        [ValidateSet('none','error','warning')]
+        [ValidateSet('none','error','warning','newWarning')]
         [string] $FailOn = 'none',
         [Parameter(Mandatory=$false)]
         [string] $rulesetFile,
@@ -156,12 +156,12 @@ try {
 
     if (([bool]($appJsonObject.PSobject.Properties.name -eq "application")) -and $appJsonObject.application) {
         AddTelemetryProperty -telemetryScope $telemetryScope -key "application" -value $appJsonObject.application
-        $dependencies += @{"publisher" = "Microsoft"; "name" = "Application"; "appId" = ''; "version" = $appJsonObject.application }
+        $dependencies += @{"publisher" = "Microsoft"; "name" = "Application"; "appId" = 'c1335042-3002-4257-bf8a-75c898ccb1b8'; "version" = $appJsonObject.application }
     }
 
     if (([bool]($appJsonObject.PSobject.Properties.name -eq "platform")) -and $appJsonObject.platform) {
         AddTelemetryProperty -telemetryScope $telemetryScope -key "platform" -value $appJsonObject.platform
-        $dependencies += @{"publisher" = "Microsoft"; "name" = "System"; "appId" = ''; "version" = $appJsonObject.platform }
+        $dependencies += @{"publisher" = "Microsoft"; "name" = "System"; "appId" = '8874ed3a-0643-4247-9ced-7a7002f7135d'; "version" = $appJsonObject.platform }
     }
 
     if (([bool]($appJsonObject.PSobject.Properties.name -eq "dependencies")) -and $appJsonObject.dependencies) {
@@ -206,11 +206,11 @@ try {
                 Copy-Item -Path $copyCompilerFolderApp.path -Destination $appSymbolsFolder -Force
                 if ($copyCompilerFolderApp.Application) {
                     if (!($dependencies | where-Object { $_.Name -eq 'Application'})) {
-                        $dependencies += @{"publisher" = "Microsoft"; "name" = "Application"; "appId" = ''; "version" = $copyCompilerFolderApp.Application }
+                        $dependencies += @{"publisher" = "Microsoft"; "name" = "Application"; "appId" = 'c1335042-3002-4257-bf8a-75c898ccb1b8'; "version" = $copyCompilerFolderApp.Application }
                     }
                 }
                 if (!($dependencies | where-Object { ($_.Name -eq "System") -and ($_.Publisher -eq "Microsoft") })) {
-                    $dependencies += @{"publisher" = "Microsoft"; "name" = "System"; "appId" = ''; "version" = $copyCompilerFolderApp.Platform }
+                    $dependencies += @{"publisher" = "Microsoft"; "name" = "System"; "appId" = '8874ed3a-0643-4247-9ced-7a7002f7135d'; "version" = $copyCompilerFolderApp.Platform }
                 }
                 $addDependencies += $copyCompilerFolderApp.Dependencies
             }
@@ -352,7 +352,7 @@ try {
             $alcExe = 'alc'
             $alcCmd = "./$alcExe"
         }
-    }   
+    }
 
     if (!(Test-Path -Path (Join-Path $alcPath $alcExe))) {
         $alcCmd = "dotnet"
@@ -367,6 +367,15 @@ try {
     if ($GenerateReportLayoutParam) {
         $alcParameters += @($GenerateReportLayoutParam)
     }
+
+    # Microsoft.Dynamics.Nav.Analyzers.Common.dll needs to referenced first, as this is how the analyzers are loaded
+    if ($EnableCodeCop -or $EnableAppSourceCop -or $EnablePerTenantExtensionCop -or $EnableUICop) {
+        $analyzersCommonDLLPath = Join-Path $binPath 'Analyzers\Microsoft.Dynamics.Nav.Analyzers.Common.dll'
+        if (Test-Path $analyzersCommonDLLPath) {
+            $alcParameters += @("/analyzer:$(Join-Path $binPath 'Analyzers\Microsoft.Dynamics.Nav.Analyzers.Common.dll')")
+        }
+    }
+
     if ($EnableCodeCop) {
         $alcParameters += @("/analyzer:$(Join-Path $binPath 'Analyzers\Microsoft.Dynamics.Nav.CodeCop.dll')")
     }
